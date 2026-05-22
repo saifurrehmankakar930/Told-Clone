@@ -1,92 +1,99 @@
-import { useState } from 'react';
-import Nav from './components/Nav.jsx';
-import PostCard from './components/PostCard.jsx';
-import Editor from './components/Editor.jsx';
-import PostView from './components/PostView.jsx';
-import { ACCENT_COLORS, SEED_POSTS } from './data.js';
-import './App.css';
+import { useState } from 'react'
+import Header from './components/Header.jsx'
+import Home from './components/Home.jsx'
+import PostDetail from './components/PostDetail.jsx'
+import Editor from './components/Editor.jsx'
+import { initialPosts } from './data.js'
 
 export default function App() {
-  const [posts, setPosts] = useState(SEED_POSTS);
-  const [view, setView] = useState('feed'); // 'feed' | 'editor' | 'post'
-  const [selectedId, setSelectedId] = useState(null);
+  const [posts, setPosts] = useState(initialPosts)
+  const [view, setView] = useState('home') // 'home' | 'post' | 'editor'
+  const [activePost, setActivePost] = useState(null)
+  const [editingPost, setEditingPost] = useState(null)
+  const [search, setSearch] = useState('')
+  const [activeTag, setActiveTag] = useState(null)
 
-  const goFeed = () => { setView('feed'); setSelectedId(null); };
-  const goEditor = () => setView('editor');
-  const openPost = (id) => { setSelectedId(id); setView('post'); };
+  const allTags = [...new Set(posts.flatMap(p => p.tags))]
 
-  const publish = ({ title, tag, body }) => {
-    const nextIndex = posts.length % ACCENT_COLORS.length;
-    const newPost = {
-      id: Date.now(),
-      title: title.trim(),
-      tag: tag.trim() || 'general',
-      body: body.trim(),
-      date: new Date().toISOString().slice(0, 10),
-      accentIndex: nextIndex,
-    };
-    setPosts([newPost, ...posts]);
-    goFeed();
-  };
+  const filteredPosts = posts.filter(p => {
+    const matchSearch = search === '' ||
+      p.title.toLowerCase().includes(search.toLowerCase()) ||
+      p.excerpt.toLowerCase().includes(search.toLowerCase())
+    const matchTag = !activeTag || p.tags.includes(activeTag)
+    return matchSearch && matchTag
+  })
+
+  const openPost = (post) => { setActivePost(post); setView('post'); window.scrollTo(0, 0) }
+  const openEditor = (post = null) => { setEditingPost(post); setView('editor'); window.scrollTo(0, 0) }
+  const goHome = () => { setView('home'); setActivePost(null); setEditingPost(null) }
+
+  const savePost = (postData) => {
+    if (editingPost) {
+      setPosts(prev => prev.map(p => p.id === editingPost.id ? { ...p, ...postData, updatedAt: new Date().toISOString() } : p))
+      setActivePost({ ...editingPost, ...postData })
+      setView('post')
+    } else {
+      const newPost = {
+        ...postData,
+        id: Date.now(),
+        createdAt: new Date().toISOString(),
+        likes: 0,
+        readTime: Math.ceil(postData.content.split(' ').length / 200)
+      }
+      setPosts(prev => [newPost, ...prev])
+      setActivePost(newPost)
+      setView('post')
+    }
+    window.scrollTo(0, 0)
+  }
 
   const deletePost = (id) => {
-    setPosts(posts.filter((p) => p.id !== id));
-    goFeed();
-  };
-
-  const selectedPost = posts.find((p) => p.id === selectedId);
-
-  return (
-    <div className="app">
-      <Nav onHome={goFeed} onWrite={goEditor} view={view} />
-
-      <main className="main">
-        {view === 'feed' && (
-          <FeedView posts={posts} onOpen={openPost} onWrite={goEditor} />
-        )}
-        {view === 'editor' && (
-          <Editor onPublish={publish} onCancel={goFeed} />
-        )}
-        {view === 'post' && selectedPost && (
-          <PostView post={selectedPost} onBack={goFeed} onDelete={deletePost} />
-        )}
-        {view === 'post' && !selectedPost && (
-          <div className="empty">
-            <p>Post not found.</p>
-            <button className="btn-solid" onClick={goFeed}>← Back to feed</button>
-          </div>
-        )}
-      </main>
-
-      <footer className="footer">
-        <span>BOLD © {new Date().getFullYear()}</span>
-        <span>Built loud. Built fast.</span>
-      </footer>
-    </div>
-  );
-}
-
-function FeedView({ posts, onOpen, onWrite }) {
-  if (posts.length === 0) {
-    return (
-      <div className="empty">
-        <h2 className="empty-title">Nothing here yet.</h2>
-        <p className="empty-sub">The page is blank. The cursor is blinking. Go.</p>
-        <button className="btn-solid btn-lg" onClick={onWrite}>Write the first post →</button>
-      </div>
-    );
+    setPosts(prev => prev.filter(p => p.id !== id))
+    goHome()
   }
+
+  const likePost = (id) => {
+    setPosts(prev => prev.map(p => p.id === id ? { ...p, likes: p.likes + 1 } : p))
+    if (activePost?.id === id) setActivePost(prev => ({ ...prev, likes: prev.likes + 1 }))
+  }
+
   return (
-    <>
-      <header className="feed-head">
-        <h1 className="feed-title">The Feed.</h1>
-        <p className="feed-sub">{posts.length} {posts.length === 1 ? 'post' : 'posts'} published. No fluff.</p>
-      </header>
-      <section className="grid">
-        {posts.map((p) => (
-          <PostCard key={p.id} post={p} onOpen={() => onOpen(p.id)} />
-        ))}
-      </section>
-    </>
-  );
+    <div style={{ minHeight: '100vh' }}>
+      <Header
+        view={view}
+        onHome={goHome}
+        onNewPost={() => openEditor()}
+        search={search}
+        onSearch={setSearch}
+      />
+      {view === 'home' && (
+        <Home
+          posts={filteredPosts}
+          allTags={allTags}
+          activeTag={activeTag}
+          onTagClick={t => setActiveTag(activeTag === t ? null : t)}
+          onPostClick={openPost}
+          onNewPost={() => openEditor()}
+          search={search}
+        />
+      )}
+      {view === 'post' && activePost && (
+        <PostDetail
+          post={activePost}
+          onBack={goHome}
+          onEdit={() => openEditor(activePost)}
+          onDelete={() => deletePost(activePost.id)}
+          onLike={() => likePost(activePost.id)}
+          onTagClick={(t) => { setActiveTag(t); goHome() }}
+        />
+      )}
+      {view === 'editor' && (
+        <Editor
+          post={editingPost}
+          onSave={savePost}
+          onCancel={editingPost ? () => { setView('post'); setEditingPost(null) } : goHome}
+        />
+      )}
+    </div>
+  )
 }
